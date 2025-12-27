@@ -1,6 +1,6 @@
 /**
  * INVOICE GENERATOR PRO - CLIENT MANAGEMENT API
- * Manage clients and provide client portal access
+ * Full client CRM with portal access for payments
  * 
  * CR AudioViz AI - Fortune 50 Quality Standards
  * @version 2.0.0
@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,7 +17,177 @@ const supabase = createClient(
 );
 
 // ============================================================================
-// CREATE CLIENT
+// TYPES
+// ============================================================================
+
+interface Client {
+  id?: string;
+  user_id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  website?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
+  tax_id?: string;
+  payment_terms?: number;
+  default_currency?: string;
+  notes?: string;
+  tags?: string[];
+  portal_access_token?: string;
+  portal_enabled?: boolean;
+  total_invoiced?: number;
+  total_paid?: number;
+  total_outstanding?: number;
+  invoice_count?: number;
+  last_invoice_date?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ============================================================================
+// GET - List clients or get single client
+// ============================================================================
+
+export async function GET(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const token = authHeader.substring(7);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const clientId = searchParams.get('id');
+    const search = searchParams.get('search');
+    const tag = searchParams.get('tag');
+    const withStats = searchParams.get('stats') === 'true';
+
+    if (clientId) {
+      // Get single client with stats
+      const { data: client, error } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', clientId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (error || !client) {
+        return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+      }
+
+      // Get invoice stats
+      const { data: invoices } = await supabase
+        .from('invoices')
+        .select('id, total, status, invoice_date')
+        .eq('client_id', clientId);
+
+      const stats = {
+        total_invoiced: 0,
+        total_paid: 0,
+        total_outstanding: 0,
+        invoice_count: invoices?.length || 0,
+        paid_count: 0,
+        pending_count: 0,
+        overdue_count: 0,
+      };
+
+      for (const inv of invoices || []) {
+        stats.total_invoiced += inv.total;
+        if (inv.status === 'paid') {
+          stats.total_paid += inv.total;
+          stats.paid_count++;
+        } else if (inv.status === 'overdue') {
+          stats.total_outstanding += inv.total;
+          stats.overdue_count++;
+        } else {
+          stats.total_outstanding += inv.total;
+          stats.pending_count++;
+        }
+      }
+
+      return NextResponse.json({
+        client: {
+          ...client,
+          stats,
+        },
+        invoices: invoices || [],
+      });
+    }
+
+    // List all clients
+    let query = supabase
+      .from('clients')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('name', { ascending: true });
+
+    if (search) {
+      query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,company.ilike.%${search}%`);
+    }
+
+    if (tag) {
+      query = query.contains('tags', [tag]);
+    }
+
+    const { data: clients, error } = await query;
+
+    if (error) throw error;
+
+    // Add basic stats if requested
+    let clientsWithStats = clients || [];
+    if (withStats) {
+      const clientIds = clients?.map(c => c.id) || [];
+      
+      const { data: invoiceStats } = await supabase
+        .from('invoices')
+        .select('client_id, total, status')
+        .in('client_id', clientIds);
+
+      const statsMap = new Map();
+      for (const inv of invoiceStats || []) {
+        if (!statsMap.has(inv.client_id)) {
+          statsMap.set(inv.client_id, { total: 0, paid: 0, outstanding: 0, count: 0 });
+        }
+        const s = statsMap.get(inv.client_id);
+        s.total += inv.total;
+        s.count++;
+        if (inv.status === 'paid') {
+          s.paid += inv.total;
+        } else {
+          s.outstanding += inv.total;
+        }
+      }
+
+      clientsWithStats = clients?.map(client => ({
+        ...client,
+        stats: statsMap.get(client.id) || { total: 0, paid: 0, outstanding: 0, count: 0 },
+      })) || [];
+    }
+
+    return NextResponse.json({
+      clients: clientsWithStats,
+      total: clientsWithStats.length,
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching clients:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// ============================================================================
+// POST - Create client
 // ============================================================================
 
 export async function POST(request: NextRequest) {
@@ -35,54 +205,41 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const {
-      name,
-      email,
-      company,
-      phone,
-      address,
-      city,
-      state,
-      zip,
-      country,
-      tax_id,
-      notes,
-      default_currency,
-      default_payment_terms,
-    } = body;
+    const { name, email, ...rest } = body;
 
     if (!name || !email) {
-      return NextResponse.json({ 
-        error: 'Name and email are required' 
+      return NextResponse.json({
+        error: 'Name and email are required'
       }, { status: 400 });
     }
 
-    // Generate client portal access token
-    const portalToken = crypto.randomBytes(32).toString('hex');
+    // Check for duplicate email
+    const { data: existing } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('email', email)
+      .single();
+
+    if (existing) {
+      return NextResponse.json({
+        error: 'A client with this email already exists'
+      }, { status: 400 });
+    }
+
+    const client: Client = {
+      user_id: user.id,
+      name,
+      email,
+      ...rest,
+      payment_terms: rest.payment_terms || 30,
+      default_currency: rest.default_currency || 'USD',
+      portal_enabled: false,
+    };
 
     const { data, error } = await supabase
       .from('clients')
-      .insert({
-        user_id: user.id,
-        name,
-        email,
-        company,
-        phone,
-        address,
-        city,
-        state,
-        zip,
-        country: country || 'USA',
-        tax_id,
-        notes,
-        default_currency: default_currency || 'USD',
-        default_payment_terms: default_payment_terms || 30,
-        portal_token: portalToken,
-        portal_enabled: true,
-        total_invoiced: 0,
-        total_paid: 0,
-        outstanding_balance: 0,
-      })
+      .insert(client)
       .select()
       .single();
 
@@ -91,93 +248,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       client: data,
-      portal_url: `${process.env.NEXT_PUBLIC_APP_URL}/portal/${portalToken}`
+      message: 'Client created successfully',
     });
 
   } catch (error: any) {
-    console.error('Create client error:', error);
+    console.error('Error creating client:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 // ============================================================================
-// GET CLIENTS
+// PATCH - Update client
 // ============================================================================
 
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const portalToken = searchParams.get('portal_token');
-
-    // Client portal access (no auth required, uses token)
-    if (portalToken) {
-      return await getClientPortalData(portalToken);
-    }
-
-    // Regular authenticated access
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const token = authHeader.substring(7);
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-    }
-
-    const clientId = searchParams.get('id');
-    const search = searchParams.get('search');
-
-    if (clientId) {
-      // Get single client
-      const { data, error } = await supabase
-        .from('clients')
-        .select(`
-          *,
-          invoices(*)
-        `)
-        .eq('id', clientId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (error) throw error;
-
-      return NextResponse.json({ client: data });
-    }
-
-    // Get all clients
-    let query = supabase
-      .from('clients')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('name', { ascending: true });
-
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,company.ilike.%${search}%`);
-    }
-
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    return NextResponse.json({
-      clients: data,
-      count: data?.length || 0
-    });
-
-  } catch (error: any) {
-    console.error('Get clients error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-// ============================================================================
-// UPDATE CLIENT
-// ============================================================================
-
-export async function PUT(request: NextRequest) {
+export async function PATCH(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -198,12 +282,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Client ID required' }, { status: 400 });
     }
 
+    updates.updated_at = new Date().toISOString();
+
     const { data, error } = await supabase
       .from('clients')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString()
-      })
+      .update(updates)
       .eq('id', id)
       .eq('user_id', user.id)
       .select()
@@ -213,17 +296,18 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      client: data
+      client: data,
+      message: 'Client updated successfully',
     });
 
   } catch (error: any) {
-    console.error('Update client error:', error);
+    console.error('Error updating client:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 // ============================================================================
-// DELETE CLIENT
+// DELETE - Delete client
 // ============================================================================
 
 export async function DELETE(request: NextRequest) {
@@ -247,7 +331,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Client ID required' }, { status: 400 });
     }
 
-    // Check for existing invoices
+    // Check for associated invoices
     const { data: invoices } = await supabase
       .from('invoices')
       .select('id')
@@ -255,20 +339,12 @@ export async function DELETE(request: NextRequest) {
       .limit(1);
 
     if (invoices && invoices.length > 0) {
-      // Soft delete - just deactivate
-      await supabase
-        .from('clients')
-        .update({ is_active: false })
-        .eq('id', id)
-        .eq('user_id', user.id);
-
       return NextResponse.json({
-        success: true,
-        message: 'Client deactivated (has existing invoices)'
-      });
+        error: 'Cannot delete client with existing invoices. Archive the client instead.',
+        has_invoices: true,
+      }, { status: 400 });
     }
 
-    // Hard delete if no invoices
     const { error } = await supabase
       .from('clients')
       .delete()
@@ -279,85 +355,20 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Client deleted'
+      message: 'Client deleted successfully',
     });
 
   } catch (error: any) {
-    console.error('Delete client error:', error);
+    console.error('Error deleting client:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 // ============================================================================
-// CLIENT PORTAL DATA
+// PUT - Client Portal Actions (enable portal, generate token)
 // ============================================================================
 
-async function getClientPortalData(portalToken: string) {
-  // Get client by portal token
-  const { data: client, error: clientError } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('portal_token', portalToken)
-    .eq('portal_enabled', true)
-    .single();
-
-  if (clientError || !client) {
-    return NextResponse.json({ error: 'Invalid portal access' }, { status: 404 });
-  }
-
-  // Get client's invoices
-  const { data: invoices } = await supabase
-    .from('invoices')
-    .select('*')
-    .eq('client_id', client.id)
-    .order('created_at', { ascending: false });
-
-  // Calculate stats
-  const stats = {
-    total_invoiced: 0,
-    total_paid: 0,
-    outstanding: 0,
-    overdue: 0,
-  };
-
-  const now = new Date();
-  invoices?.forEach(inv => {
-    stats.total_invoiced += inv.total;
-    if (inv.status === 'paid') {
-      stats.total_paid += inv.total;
-    } else if (inv.status !== 'cancelled') {
-      stats.outstanding += inv.total;
-      if (new Date(inv.due_date) < now) {
-        stats.overdue += inv.total;
-      }
-    }
-  });
-
-  return NextResponse.json({
-    client: {
-      name: client.name,
-      company: client.company,
-      email: client.email,
-    },
-    invoices: invoices?.map(inv => ({
-      id: inv.id,
-      invoice_number: inv.invoice_number,
-      invoice_date: inv.invoice_date,
-      due_date: inv.due_date,
-      total: inv.total,
-      status: inv.status,
-      currency: inv.currency,
-    })),
-    stats,
-    payment_methods: ['credit_card', 'bank_transfer', 'paypal'] // Configure per user
-  });
-}
-
-// ============================================================================
-// REGENERATE PORTAL TOKEN
-// ============================================================================
-
-export async function PATCH(request: NextRequest) {
+export async function PUT(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -372,58 +383,97 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { client_id, action } = body;
+    const { action, client_id } = body;
 
-    if (!client_id) {
-      return NextResponse.json({ error: 'Client ID required' }, { status: 400 });
-    }
-
-    if (action === 'regenerate_token') {
-      const newToken = crypto.randomBytes(32).toString('hex');
-
-      const { data, error } = await supabase
-        .from('clients')
-        .update({ portal_token: newToken })
-        .eq('id', client_id)
-        .eq('user_id', user.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-
+    if (!action || !client_id) {
       return NextResponse.json({
-        success: true,
-        portal_url: `${process.env.NEXT_PUBLIC_APP_URL}/portal/${newToken}`
-      });
+        error: 'Action and client_id required'
+      }, { status: 400 });
     }
 
-    if (action === 'toggle_portal') {
-      const { data: current } = await supabase
-        .from('clients')
-        .select('portal_enabled')
-        .eq('id', client_id)
-        .single();
+    switch (action) {
+      case 'enable_portal': {
+        const portalToken = generatePortalToken();
+        
+        const { data, error } = await supabase
+          .from('clients')
+          .update({
+            portal_enabled: true,
+            portal_access_token: portalToken,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', client_id)
+          .eq('user_id', user.id)
+          .select()
+          .single();
 
-      const { data, error } = await supabase
-        .from('clients')
-        .update({ portal_enabled: !current?.portal_enabled })
-        .eq('id', client_id)
-        .eq('user_id', user.id)
-        .select()
-        .single();
+        if (error) throw error;
 
-      if (error) throw error;
+        const portalUrl = `${process.env.NEXT_PUBLIC_APP_URL}/portal/${portalToken}`;
 
-      return NextResponse.json({
-        success: true,
-        portal_enabled: data.portal_enabled
-      });
+        return NextResponse.json({
+          success: true,
+          portal_url: portalUrl,
+          message: 'Client portal enabled. Share this link with your client.',
+        });
+      }
+
+      case 'disable_portal': {
+        const { error } = await supabase
+          .from('clients')
+          .update({
+            portal_enabled: false,
+            portal_access_token: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', client_id)
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        return NextResponse.json({
+          success: true,
+          message: 'Client portal disabled',
+        });
+      }
+
+      case 'regenerate_token': {
+        const newToken = generatePortalToken();
+        
+        const { error } = await supabase
+          .from('clients')
+          .update({
+            portal_access_token: newToken,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', client_id)
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        const portalUrl = `${process.env.NEXT_PUBLIC_APP_URL}/portal/${newToken}`;
+
+        return NextResponse.json({
+          success: true,
+          portal_url: portalUrl,
+          message: 'Portal access token regenerated',
+        });
+      }
+
+      default:
+        return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
-
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
 
   } catch (error: any) {
-    console.error('Patch client error:', error);
+    console.error('Error in portal action:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+function generatePortalToken(): string {
+  return randomBytes(32).toString('hex');
 }
