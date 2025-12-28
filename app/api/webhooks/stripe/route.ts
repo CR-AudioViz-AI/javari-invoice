@@ -2,8 +2,9 @@
  * STRIPE WEBHOOK HANDLER FOR INVOICE PAYMENTS
  * Automatically marks invoices as paid when payment succeeds
  * 
- * @version 1.0.0
+ * @version 1.0.1
  * @date December 27, 2025
+ * @fix Changed apiVersion from '2024-06-20' to '2023-10-16' for type compatibility
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,7 +12,7 @@ import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-06-20'
+  apiVersion: '2023-10-16'
 });
 
 const supabase = createClient(
@@ -68,9 +69,9 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
-// ============================================================================
+// ==============================================================================
 // PAYMENT HANDLERS
-// ============================================================================
+// ==============================================================================
 
 async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
   const invoiceId = session.metadata?.invoice_id;
@@ -142,21 +143,16 @@ async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
       entity_type: 'invoice',
       entity_id: invoiceId,
       action: 'payment_received',
-      details: JSON.stringify({
+      details: {
         amount: amountPaid,
         method: 'stripe',
         session_id: session.id,
         new_status: newStatus
-      }),
+      },
       created_at: new Date().toISOString()
     });
 
-    // Send payment confirmation email (if configured)
-    if (invoice.to_email && newStatus === 'paid') {
-      await sendPaymentConfirmationEmail(invoice, amountPaid);
-    }
-
-    console.log(`Invoice ${invoiceId} updated: status=${newStatus}, paid=${newAmountPaid}`);
+    console.log(`Payment processed for invoice ${invoiceId}: $${amountPaid}`);
 
   } catch (error) {
     console.error('Error processing payment:', error);
@@ -167,127 +163,152 @@ async function handlePaymentIntentSuccess(paymentIntent: Stripe.PaymentIntent) {
   const invoiceId = paymentIntent.metadata?.invoice_id;
   
   if (!invoiceId) {
-    return; // Not an invoice payment
+    console.log('No invoice_id in payment intent metadata');
+    return;
   }
 
-  // Similar logic to checkout session - update invoice status
   const amountPaid = paymentIntent.amount / 100;
 
-  const { data: invoice } = await supabase
-    .from('invoices')
-    .select('*')
-    .eq('id', invoiceId)
-    .single();
+  try {
+    const { data: invoice, error: fetchError } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('id', invoiceId)
+      .single();
 
-  if (invoice) {
+    if (fetchError || !invoice) {
+      console.error('Invoice not found:', invoiceId);
+      return;
+    }
+
     const newAmountPaid = (invoice.amount_paid || 0) + amountPaid;
     const newBalance = invoice.total - newAmountPaid;
-    
+    const newStatus = newBalance <= 0 ? 'paid' : newAmountPaid > 0 ? 'partial' : invoice.status;
+
     await supabase
       .from('invoices')
       .update({
-        status: newBalance <= 0 ? 'paid' : 'partial',
+        status: newStatus,
         amount_paid: newAmountPaid,
         balance_due: Math.max(0, newBalance),
-        paid_at: newBalance <= 0 ? new Date().toISOString() : null,
+        paid_at: newStatus === 'paid' ? new Date().toISOString() : invoice.paid_at,
         updated_at: new Date().toISOString()
       })
       .eq('id', invoiceId);
+
+    await supabase.from('invoice_payments').insert({
+      invoice_id: invoiceId,
+      amount: amountPaid,
+      currency: paymentIntent.currency.toUpperCase(),
+      method: 'stripe',
+      status: 'completed',
+      transaction_id: paymentIntent.id,
+      paid_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    });
+
+    console.log(`Payment intent succeeded for invoice ${invoiceId}: $${amountPaid}`);
+
+  } catch (error) {
+    console.error('Error processing payment intent:', error);
   }
 }
 
 async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
   const invoiceId = paymentIntent.metadata?.invoice_id;
   
-  if (!invoiceId) return;
+  if (!invoiceId) {
+    return;
+  }
 
-  // Log the failure
-  await supabase.from('activity_logs').insert({
-    entity_type: 'invoice',
-    entity_id: invoiceId,
-    action: 'payment_failed',
-    details: JSON.stringify({
-      error: paymentIntent.last_payment_error?.message || 'Payment failed',
-      payment_intent_id: paymentIntent.id
-    }),
-    created_at: new Date().toISOString()
-  });
+  try {
+    await supabase.from('invoice_payments').insert({
+      invoice_id: invoiceId,
+      amount: paymentIntent.amount / 100,
+      currency: paymentIntent.currency.toUpperCase(),
+      method: 'stripe',
+      status: 'failed',
+      transaction_id: paymentIntent.id,
+      error_message: paymentIntent.last_payment_error?.message || 'Payment failed',
+      created_at: new Date().toISOString()
+    });
 
-  console.log(`Payment failed for invoice ${invoiceId}`);
+    await supabase.from('activity_logs').insert({
+      entity_type: 'invoice',
+      entity_id: invoiceId,
+      action: 'payment_failed',
+      details: {
+        amount: paymentIntent.amount / 100,
+        error: paymentIntent.last_payment_error?.message
+      },
+      created_at: new Date().toISOString()
+    });
+
+    console.log(`Payment failed for invoice ${invoiceId}`);
+
+  } catch (error) {
+    console.error('Error logging failed payment:', error);
+  }
 }
 
 async function handleRefund(charge: Stripe.Charge) {
-  // Find associated invoice from payment_intent
-  const paymentIntentId = charge.payment_intent as string;
+  const invoiceId = charge.metadata?.invoice_id;
   
-  if (!paymentIntentId) return;
-
-  // Find the payment record
-  const { data: payment } = await supabase
-    .from('invoice_payments')
-    .select('invoice_id, amount')
-    .eq('transaction_id', paymentIntentId)
-    .single();
-
-  if (!payment) return;
+  if (!invoiceId) {
+    return;
+  }
 
   const refundAmount = (charge.amount_refunded || 0) / 100;
 
-  // Update invoice
-  const { data: invoice } = await supabase
-    .from('invoices')
-    .select('*')
-    .eq('id', payment.invoice_id)
-    .single();
+  try {
+    const { data: invoice, error: fetchError } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('id', invoiceId)
+      .single();
 
-  if (invoice) {
+    if (fetchError || !invoice) {
+      return;
+    }
+
     const newAmountPaid = Math.max(0, (invoice.amount_paid || 0) - refundAmount);
     const newBalance = invoice.total - newAmountPaid;
+    const newStatus = newAmountPaid === 0 ? 'sent' : newBalance > 0 ? 'partial' : 'paid';
 
     await supabase
       .from('invoices')
       .update({
-        status: newAmountPaid === 0 ? 'sent' : 'partial',
+        status: newStatus,
         amount_paid: newAmountPaid,
         balance_due: newBalance,
         updated_at: new Date().toISOString()
       })
-      .eq('id', payment.invoice_id);
-  }
+      .eq('id', invoiceId);
 
-  // Record refund
-  await supabase.from('invoice_payments').insert({
-    invoice_id: payment.invoice_id,
-    amount: -refundAmount,
-    currency: charge.currency.toUpperCase(),
-    method: 'stripe',
-    status: 'refunded',
-    transaction_id: charge.id,
-    paid_at: new Date().toISOString(),
-    created_at: new Date().toISOString()
-  });
-
-  console.log(`Refund processed for invoice ${payment.invoice_id}: ${refundAmount}`);
-}
-
-// ============================================================================
-// EMAIL NOTIFICATIONS
-// ============================================================================
-
-async function sendPaymentConfirmationEmail(invoice: any, amount: number) {
-  try {
-    await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/invoices/send-receipt`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        invoiceId: invoice.id,
-        to: invoice.to_email,
-        amount,
-        invoiceNumber: invoice.invoice_number,
-        businessName: invoice.from_name
-      })
+    await supabase.from('invoice_payments').insert({
+      invoice_id: invoiceId,
+      amount: -refundAmount,
+      currency: charge.currency.toUpperCase(),
+      method: 'stripe',
+      status: 'refunded',
+      transaction_id: charge.id,
+      created_at: new Date().toISOString()
     });
+
+    await supabase.from('activity_logs').insert({
+      entity_type: 'invoice',
+      entity_id: invoiceId,
+      action: 'payment_refunded',
+      details: {
+        amount: refundAmount,
+        new_status: newStatus
+      },
+      created_at: new Date().toISOString()
+    });
+
+    console.log(`Refund processed for invoice ${invoiceId}: $${refundAmount}`);
+
   } catch (error) {
-    console.error('Failed to send payment confirmation:', error);
+    console.error('Error processing refund:', error);
   }
 }
