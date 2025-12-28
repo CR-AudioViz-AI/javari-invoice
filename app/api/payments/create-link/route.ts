@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-06-20'
+// Initialize Stripe - let it use the default API version for the SDK
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  typescript: true
 })
 
 export async function POST(request: NextRequest) {
   try {
     const { invoiceId, amount, currency, description, customerEmail } = await request.json()
+    
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
+    }
     
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
@@ -15,6 +20,7 @@ export async function POST(request: NextRequest) {
     
     // Convert to cents for Stripe (most currencies)
     const amountInCents = Math.round(amount * 100)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://crav-invoice-generator.vercel.app'
     
     // Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
@@ -22,9 +28,9 @@ export async function POST(request: NextRequest) {
       line_items: [
         {
           price_data: {
-            currency: currency.toLowerCase(),
+            currency: (currency || 'usd').toLowerCase(),
             product_data: {
-              name: description || `Invoice Payment`,
+              name: description || 'Invoice Payment',
               description: `Payment for ${invoiceId || 'invoice'}`,
             },
             unit_amount: amountInCents,
@@ -33,17 +39,12 @@ export async function POST(request: NextRequest) {
         },
       ],
       mode: 'payment',
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/invoices/payment-success?session_id={CHECKOUT_SESSION_ID}&invoice_id=${invoiceId}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/invoices/payment-cancelled?invoice_id=${invoiceId}`,
-      customer_email: customerEmail,
+      success_url: `${appUrl}/payment-success?session_id={CHECKOUT_SESSION_ID}&invoice_id=${invoiceId || ''}`,
+      cancel_url: `${appUrl}/payment-cancelled?invoice_id=${invoiceId || ''}`,
+      customer_email: customerEmail || undefined,
       metadata: {
-        invoice_id: invoiceId,
+        invoice_id: invoiceId || '',
         source: 'invoice_generator'
-      },
-      payment_intent_data: {
-        metadata: {
-          invoice_id: invoiceId
-        }
       }
     })
     
