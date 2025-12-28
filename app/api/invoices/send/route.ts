@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 export async function POST(request: NextRequest) {
   try {
     const { 
@@ -19,6 +17,12 @@ export async function POST(request: NextRequest) {
     if (!to || !subject) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+    
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json({ error: 'Email service not configured' }, { status: 500 })
+    }
+    
+    const resend = new Resend(process.env.RESEND_API_KEY)
     
     // Generate email HTML
     const html = `
@@ -39,16 +43,16 @@ export async function POST(request: NextRequest) {
       <body>
         <div class="container">
           <div class="header">
-            <h1 style="margin:0;">Invoice ${invoiceNumber}</h1>
+            <h1 style="margin:0;">Invoice ${invoiceNumber || 'N/A'}</h1>
             <p style="margin:10px 0 0 0;opacity:0.9;">You have a new invoice</p>
           </div>
           
           <div class="content">
             <div class="invoice-details">
-              <p><strong>Invoice Number:</strong> ${invoiceNumber}</p>
+              <p><strong>Invoice Number:</strong> ${invoiceNumber || 'N/A'}</p>
               <p><strong>Amount Due:</strong></p>
-              <p class="amount">${amount}</p>
-              <p><strong>Due Date:</strong> ${dueDate}</p>
+              <p class="amount">${amount || '$0.00'}</p>
+              <p><strong>Due Date:</strong> ${dueDate || 'N/A'}</p>
             </div>
             
             ${paymentLink ? `
@@ -71,26 +75,25 @@ export async function POST(request: NextRequest) {
       </html>
     `
     
-    // Prepare attachments if PDF provided
-    const attachments = []
-    if (pdfAttachment) {
-      // Extract base64 data from data URI
-      const base64Data = pdfAttachment.split(',')[1]
-      attachments.push({
-        filename: `invoice-${invoiceNumber}.pdf`,
-        content: base64Data,
-        type: 'application/pdf'
-      })
-    }
-    
-    // Send via Resend
-    const { data, error } = await resend.emails.send({
+    // Prepare email options
+    const emailOptions: any = {
       from: 'Invoice Generator <invoices@craudiovizai.com>',
       to: [to],
       subject: subject,
-      html: html,
-      attachments: attachments.length > 0 ? attachments : undefined
-    })
+      html: html
+    }
+    
+    // Add attachment if PDF provided
+    if (pdfAttachment) {
+      const base64Data = pdfAttachment.includes(',') ? pdfAttachment.split(',')[1] : pdfAttachment
+      emailOptions.attachments = [{
+        filename: `invoice-${invoiceNumber || 'document'}.pdf`,
+        content: base64Data
+      }]
+    }
+    
+    // Send via Resend
+    const { data, error } = await resend.emails.send(emailOptions)
     
     if (error) {
       throw new Error(error.message)
