@@ -96,6 +96,24 @@ export default function InvoiceGeneratorPage() {
     return matchesSearch && matchesStatus
   })
 
+  const handleAIInvoiceCreated = (parsedInvoice: any) => {
+    const newInvoice: Invoice = {
+      id: `inv_${Date.now()}`,
+      invoice_number: `INV-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(3, '0')}`,
+      client_name: parsedInvoice.clientName || 'New Client',
+      client_email: parsedInvoice.clientEmail || '',
+      amount: parsedInvoice.items?.reduce((sum: number, item: any) => sum + (item.amount || 0), 0) || 0,
+      currency: parsedInvoice.currency || 'USD',
+      status: 'draft',
+      due_date: parsedInvoice.dueDate || new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+      issue_date: new Date().toISOString().split('T')[0],
+      items: parsedInvoice.items || []
+    }
+    setInvoices([newInvoice, ...invoices])
+    setShowAIChat(false)
+    setActiveView('invoices')
+  }
+
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       paid: 'bg-green-500/20 text-green-400 border-green-500/30',
@@ -127,32 +145,20 @@ export default function InvoiceGeneratorPage() {
       <header className="bg-gray-900 border-b border-gray-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button
-              className="md:hidden p-2"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
+            <button className="md:hidden p-2" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
             <h1 className="text-xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
               Invoice Generator Pro
             </h1>
-            <span className="hidden sm:inline px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">
-              Pro
-            </span>
+            <span className="hidden sm:inline px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">Pro</span>
           </div>
-
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowAIChat(!showAIChat)}
-              className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-            >
+            <button onClick={() => setShowAIChat(!showAIChat)} className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">
               <Sparkles className="w-4 h-4" />
               <span className="hidden sm:inline">AI Assistant</span>
             </button>
-            <button
-              onClick={() => setActiveView('create')}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
-            >
+            <button onClick={() => setActiveView('create')} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors">
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">New Invoice</span>
             </button>
@@ -167,25 +173,16 @@ export default function InvoiceGeneratorPage() {
             {navItems.map((item) => (
               <button
                 key={item.id}
-                onClick={() => {
-                  setActiveView(item.id as ActiveView)
-                  setMobileMenuOpen(false)
-                }}
+                onClick={() => { setActiveView(item.id as ActiveView); setMobileMenuOpen(false) }}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg mb-1 transition-colors ${
-                  activeView === item.id
-                    ? 'bg-green-600 text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  activeView === item.id ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <item.icon className="w-4 h-4" />
                   <span className="text-sm">{item.label}</span>
                 </div>
-                {item.badge && (
-                  <span className="px-1.5 py-0.5 bg-purple-500 text-white text-xs rounded">
-                    {item.badge}
-                  </span>
-                )}
+                {item.badge && <span className="px-1.5 py-0.5 bg-purple-500 text-white text-xs rounded">{item.badge}</span>}
               </button>
             ))}
           </nav>
@@ -194,131 +191,65 @@ export default function InvoiceGeneratorPage() {
         {/* Main Content */}
         <main className="flex-1 p-4 md:p-6 min-h-[calc(100vh-57px)]">
           <div className="max-w-6xl mx-auto">
-            
             {/* Dashboard View */}
             {activeView === 'dashboard' && (
               <div className="space-y-6">
-                {/* Stats Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-gray-800 rounded-xl p-4">
-                    <div className="flex items-center gap-2 text-gray-400 mb-2">
-                      <DollarSign className="w-4 h-4" />
-                      <span className="text-sm">Total Revenue</span>
-                    </div>
+                    <div className="flex items-center gap-2 text-gray-400 mb-2"><DollarSign className="w-4 h-4" /><span className="text-sm">Total Revenue</span></div>
                     <p className="text-2xl font-bold text-green-400">{formatCurrency(totalRevenue)}</p>
                     <p className="text-xs text-gray-500 mt-1">{paidCount} paid invoices</p>
                   </div>
-                  
                   <div className="bg-gray-800 rounded-xl p-4">
-                    <div className="flex items-center gap-2 text-gray-400 mb-2">
-                      <Clock className="w-4 h-4" />
-                      <span className="text-sm">Outstanding</span>
-                    </div>
+                    <div className="flex items-center gap-2 text-gray-400 mb-2"><Clock className="w-4 h-4" /><span className="text-sm">Outstanding</span></div>
                     <p className="text-2xl font-bold text-orange-400">{formatCurrency(totalOutstanding)}</p>
                     <p className="text-xs text-gray-500 mt-1">{invoices.length - paidCount} pending</p>
                   </div>
-                  
                   <div className="bg-gray-800 rounded-xl p-4">
-                    <div className="flex items-center gap-2 text-gray-400 mb-2">
-                      <AlertCircle className="w-4 h-4" />
-                      <span className="text-sm">Overdue</span>
-                    </div>
+                    <div className="flex items-center gap-2 text-gray-400 mb-2"><AlertCircle className="w-4 h-4" /><span className="text-sm">Overdue</span></div>
                     <p className="text-2xl font-bold text-red-400">{overdueCount}</p>
                     <p className="text-xs text-gray-500 mt-1">Needs attention</p>
                   </div>
-                  
                   <div className="bg-gray-800 rounded-xl p-4">
-                    <div className="flex items-center gap-2 text-gray-400 mb-2">
-                      <FileText className="w-4 h-4" />
-                      <span className="text-sm">Total Invoices</span>
-                    </div>
+                    <div className="flex items-center gap-2 text-gray-400 mb-2"><FileText className="w-4 h-4" /><span className="text-sm">Total Invoices</span></div>
                     <p className="text-2xl font-bold">{invoices.length}</p>
                     <p className="text-xs text-gray-500 mt-1">This period</p>
                   </div>
                 </div>
 
-                {/* Quick Actions */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <button
-                    onClick={() => setActiveView('create')}
-                    className="flex items-center gap-3 p-4 bg-gray-800 hover:bg-gray-750 rounded-xl transition-colors"
-                  >
-                    <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
-                      <Plus className="w-5 h-5 text-green-400" />
-                    </div>
-                    <div className="text-left">
-                      <p className="font-medium">New Invoice</p>
-                      <p className="text-xs text-gray-500">Create manually</p>
-                    </div>
+                  <button onClick={() => setActiveView('create')} className="flex items-center gap-3 p-4 bg-gray-800 hover:bg-gray-750 rounded-xl transition-colors">
+                    <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center"><Plus className="w-5 h-5 text-green-400" /></div>
+                    <div className="text-left"><p className="font-medium">New Invoice</p><p className="text-xs text-gray-500">Create manually</p></div>
                   </button>
-                  
-                  <button
-                    onClick={() => setShowAIChat(true)}
-                    className="flex items-center gap-3 p-4 bg-gray-800 hover:bg-gray-750 rounded-xl transition-colors"
-                  >
-                    <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-                      <Sparkles className="w-5 h-5 text-purple-400" />
-                    </div>
-                    <div className="text-left">
-                      <p className="font-medium">AI Create</p>
-                      <p className="text-xs text-gray-500">Natural language</p>
-                    </div>
+                  <button onClick={() => setShowAIChat(true)} className="flex items-center gap-3 p-4 bg-gray-800 hover:bg-gray-750 rounded-xl transition-colors">
+                    <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center"><Sparkles className="w-5 h-5 text-purple-400" /></div>
+                    <div className="text-left"><p className="font-medium">AI Create</p><p className="text-xs text-gray-500">Natural language</p></div>
                   </button>
-                  
-                  <button
-                    onClick={() => setActiveView('recurring')}
-                    className="flex items-center gap-3 p-4 bg-gray-800 hover:bg-gray-750 rounded-xl transition-colors"
-                  >
-                    <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                      <RefreshCw className="w-5 h-5 text-blue-400" />
-                    </div>
-                    <div className="text-left">
-                      <p className="font-medium">Recurring</p>
-                      <p className="text-xs text-gray-500">Auto billing</p>
-                    </div>
+                  <button onClick={() => setActiveView('recurring')} className="flex items-center gap-3 p-4 bg-gray-800 hover:bg-gray-750 rounded-xl transition-colors">
+                    <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center"><RefreshCw className="w-5 h-5 text-blue-400" /></div>
+                    <div className="text-left"><p className="font-medium">Recurring</p><p className="text-xs text-gray-500">Auto billing</p></div>
                   </button>
-                  
-                  <button
-                    onClick={() => setActiveView('analytics')}
-                    className="flex items-center gap-3 p-4 bg-gray-800 hover:bg-gray-750 rounded-xl transition-colors"
-                  >
-                    <div className="w-10 h-10 bg-cyan-500/20 rounded-lg flex items-center justify-center">
-                      <TrendingUp className="w-5 h-5 text-cyan-400" />
-                    </div>
-                    <div className="text-left">
-                      <p className="font-medium">Analytics</p>
-                      <p className="text-xs text-gray-500">View reports</p>
-                    </div>
+                  <button onClick={() => setActiveView('analytics')} className="flex items-center gap-3 p-4 bg-gray-800 hover:bg-gray-750 rounded-xl transition-colors">
+                    <div className="w-10 h-10 bg-cyan-500/20 rounded-lg flex items-center justify-center"><TrendingUp className="w-5 h-5 text-cyan-400" /></div>
+                    <div className="text-left"><p className="font-medium">Analytics</p><p className="text-xs text-gray-500">View reports</p></div>
                   </button>
                 </div>
 
-                {/* Recent Invoices */}
                 <div className="bg-gray-800 rounded-xl">
                   <div className="p-4 border-b border-gray-700 flex items-center justify-between">
                     <h2 className="font-semibold">Recent Invoices</h2>
-                    <button
-                      onClick={() => setActiveView('invoices')}
-                      className="text-sm text-green-400 hover:text-green-300"
-                    >
-                      View All
-                    </button>
+                    <button onClick={() => setActiveView('invoices')} className="text-sm text-green-400 hover:text-green-300">View All</button>
                   </div>
                   <div className="divide-y divide-gray-700">
                     {invoices.slice(0, 5).map(invoice => (
                       <div key={invoice.id} className="p-4 flex items-center justify-between hover:bg-gray-750">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-gray-400" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{invoice.invoice_number}</p>
-                            <p className="text-sm text-gray-400">{invoice.client_name}</p>
-                          </div>
+                          <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center"><FileText className="w-5 h-5 text-gray-400" /></div>
+                          <div><p className="font-medium">{invoice.invoice_number}</p><p className="text-sm text-gray-400">{invoice.client_name}</p></div>
                         </div>
                         <div className="flex items-center gap-4">
-                          <span className={`px-2 py-1 text-xs rounded-full border ${getStatusColor(invoice.status)}`}>
-                            {invoice.status}
-                          </span>
+                          <span className={`px-2 py-1 text-xs rounded-full border ${getStatusColor(invoice.status)}`}>{invoice.status}</span>
                           <span className="font-medium">{formatCurrency(invoice.amount)}</span>
                         </div>
                       </div>
@@ -328,242 +259,65 @@ export default function InvoiceGeneratorPage() {
               </div>
             )}
 
-            {/* Invoices List View */}
+            {/* Invoices List */}
             {activeView === 'invoices' && (
               <div className="space-y-4">
-                {/* Filters */}
                 <div className="flex flex-col sm:flex-row gap-4">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input
-                      type="text"
-                      placeholder="Search invoices..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
+                    <input type="text" placeholder="Search invoices..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                  >
+                  <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500">
                     <option value="all">All Status</option>
                     <option value="draft">Draft</option>
                     <option value="sent">Sent</option>
-                    <option value="viewed">Viewed</option>
                     <option value="paid">Paid</option>
                     <option value="overdue">Overdue</option>
                   </select>
                 </div>
-
-                {/* Invoice List */}
                 <div className="bg-gray-800 rounded-xl overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-700">
-                          <th className="text-left p-4 text-sm text-gray-400 font-medium">Invoice</th>
-                          <th className="text-left p-4 text-sm text-gray-400 font-medium">Client</th>
-                          <th className="text-left p-4 text-sm text-gray-400 font-medium">Amount</th>
-                          <th className="text-left p-4 text-sm text-gray-400 font-medium">Status</th>
-                          <th className="text-left p-4 text-sm text-gray-400 font-medium">Due Date</th>
-                          <th className="text-right p-4 text-sm text-gray-400 font-medium">Actions</th>
+                  <table className="w-full">
+                    <thead><tr className="border-b border-gray-700"><th className="text-left p-4 text-sm text-gray-400">Invoice</th><th className="text-left p-4 text-sm text-gray-400">Client</th><th className="text-left p-4 text-sm text-gray-400">Amount</th><th className="text-left p-4 text-sm text-gray-400">Status</th><th className="text-left p-4 text-sm text-gray-400">Due</th><th className="text-right p-4 text-sm text-gray-400">Actions</th></tr></thead>
+                    <tbody>
+                      {filteredInvoices.map(inv => (
+                        <tr key={inv.id} className="border-b border-gray-700 last:border-0 hover:bg-gray-750">
+                          <td className="p-4 font-medium">{inv.invoice_number}</td>
+                          <td className="p-4"><p>{inv.client_name}</p><p className="text-sm text-gray-500">{inv.client_email}</p></td>
+                          <td className="p-4 font-medium">{formatCurrency(inv.amount)}</td>
+                          <td className="p-4"><span className={`px-2 py-1 text-xs rounded-full border ${getStatusColor(inv.status)}`}>{inv.status}</span></td>
+                          <td className="p-4 text-gray-400">{formatDate(inv.due_date)}</td>
+                          <td className="p-4"><div className="flex items-center justify-end gap-1"><button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"><Eye className="w-4 h-4" /></button><button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"><Send className="w-4 h-4" /></button><button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"><Download className="w-4 h-4" /></button></div></td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {filteredInvoices.map(invoice => (
-                          <tr key={invoice.id} className="border-b border-gray-700 last:border-0 hover:bg-gray-750">
-                            <td className="p-4">
-                              <span className="font-medium">{invoice.invoice_number}</span>
-                            </td>
-                            <td className="p-4">
-                              <div>
-                                <p>{invoice.client_name}</p>
-                                <p className="text-sm text-gray-500">{invoice.client_email}</p>
-                              </div>
-                            </td>
-                            <td className="p-4 font-medium">{formatCurrency(invoice.amount)}</td>
-                            <td className="p-4">
-                              <span className={`px-2 py-1 text-xs rounded-full border ${getStatusColor(invoice.status)}`}>
-                                {invoice.status}
-                              </span>
-                            </td>
-                            <td className="p-4 text-gray-400">{formatDate(invoice.due_date)}</td>
-                            <td className="p-4">
-                              <div className="flex items-center justify-end gap-1">
-                                <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                                <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">
-                                  <Send className="w-4 h-4" />
-                                </button>
-                                <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">
-                                  <Download className="w-4 h-4" />
-                                </button>
-                                <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">
-                                  <MoreVertical className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
 
-            {/* Create Invoice View */}
+            {/* Create Invoice */}
             {activeView === 'create' && (
               <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-bold">Create Invoice</h2>
-                  <button
-                    onClick={() => setShowAIChat(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    Use AI Instead
-                  </button>
-                </div>
-                
+                <div className="flex items-center justify-between"><h2 className="text-2xl font-bold">Create Invoice</h2><button onClick={() => setShowAIChat(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg"><Sparkles className="w-4 h-4" />Use AI Instead</button></div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="lg:col-span-2 space-y-4">
-                    <AIChatInvoice onInvoiceCreated={(inv) => {
-                      setInvoices([inv, ...invoices])
-                      setActiveView('invoices')
-                    }} />
-                  </div>
-                  <div>
-                    <TemplateSelector onSelect={(template) => console.log('Selected:', template)} />
-                  </div>
+                  <div className="lg:col-span-2"><AIChatInvoice businessName="CR AudioViz AI" onCreateInvoice={handleAIInvoiceCreated} /></div>
+                  <div><TemplateSelector onSelect={(t) => console.log('Selected:', t)} /></div>
                 </div>
               </div>
             )}
 
-            {/* Recurring Invoices View */}
-            {activeView === 'recurring' && (
-              <RecurringInvoiceManager />
-            )}
-
-            {/* Analytics View */}
-            {activeView === 'analytics' && (
-              <InvoiceAnalytics />
-            )}
-
-            {/* Clients View */}
-            {activeView === 'clients' && (
-              <div className="bg-gray-800 rounded-xl p-6">
-                <h2 className="text-xl font-bold mb-4">Client Management</h2>
-                <p className="text-gray-400">Manage your clients and their billing information.</p>
-                {/* Client list would go here */}
-              </div>
-            )}
-
-            {/* Estimates View */}
-            {activeView === 'estimates' && (
-              <Estimates />
-            )}
-
-            {/* Time Tracking View */}
-            {activeView === 'time' && (
-              <TimeTracking />
-            )}
-
-            {/* Client Portal Preview */}
-            {activeView === 'client-portal' && (
-              <div className="space-y-4">
-                <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
-                  <div className="flex items-center gap-3">
-                    <ExternalLink className="w-5 h-5 text-purple-400" />
-                    <div>
-                      <p className="font-medium text-purple-300">Client Portal Preview</p>
-                      <p className="text-sm text-gray-400">This is how your clients see their invoices</p>
-                    </div>
-                  </div>
-                </div>
-                <ClientPortal businessName="CR AudioViz AI" />
-              </div>
-            )}
-
-            {/* Settings View */}
-            {activeView === 'settings' && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold">Settings</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-gray-800 rounded-xl p-6">
-                    <h3 className="font-semibold mb-4">Business Information</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-1">Business Name</label>
-                        <input
-                          type="text"
-                          defaultValue="CR AudioViz AI"
-                          className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-1">Email</label>
-                        <input
-                          type="email"
-                          defaultValue="billing@craudiovizai.com"
-                          className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-gray-800 rounded-xl p-6">
-                    <h3 className="font-semibold mb-4">Payment Settings</h3>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between p-3 bg-gray-700 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <CreditCard className="w-5 h-5 text-purple-400" />
-                          <span>Stripe</span>
-                        </div>
-                        <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded">Connected</span>
-                      </div>
-                      <div className="flex items-center justify-between p-3 bg-gray-700 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <DollarSign className="w-5 h-5 text-blue-400" />
-                          <span>PayPal</span>
-                        </div>
-                        <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded">Connected</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {activeView === 'recurring' && <RecurringInvoiceManager />}
+            {activeView === 'analytics' && <InvoiceAnalytics />}
+            {activeView === 'clients' && <div className="bg-gray-800 rounded-xl p-6"><h2 className="text-xl font-bold mb-4">Client Management</h2><p className="text-gray-400">Manage your clients and billing info.</p></div>}
+            {activeView === 'estimates' && <Estimates />}
+            {activeView === 'time' && <TimeTracking />}
+            {activeView === 'client-portal' && (<div className="space-y-4"><div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4"><div className="flex items-center gap-3"><ExternalLink className="w-5 h-5 text-purple-400" /><div><p className="font-medium text-purple-300">Client Portal Preview</p><p className="text-sm text-gray-400">How clients see their invoices</p></div></div></div><ClientPortal businessName="CR AudioViz AI" /></div>)}
+            {activeView === 'settings' && (<div className="space-y-6"><h2 className="text-2xl font-bold">Settings</h2><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div className="bg-gray-800 rounded-xl p-6"><h3 className="font-semibold mb-4">Business Info</h3><div className="space-y-4"><div><label className="block text-sm text-gray-400 mb-1">Business Name</label><input type="text" defaultValue="CR AudioViz AI" className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white" /></div><div><label className="block text-sm text-gray-400 mb-1">Email</label><input type="email" defaultValue="billing@craudiovizai.com" className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white" /></div></div></div><div className="bg-gray-800 rounded-xl p-6"><h3 className="font-semibold mb-4">Payment</h3><div className="space-y-4"><div className="flex items-center justify-between p-3 bg-gray-700 rounded-lg"><div className="flex items-center gap-3"><CreditCard className="w-5 h-5 text-purple-400" /><span>Stripe</span></div><span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded">Connected</span></div><div className="flex items-center justify-between p-3 bg-gray-700 rounded-lg"><div className="flex items-center gap-3"><DollarSign className="w-5 h-5 text-blue-400" /><span>PayPal</span></div><span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded">Connected</span></div></div></div></div></div>)}
           </div>
         </main>
       </div>
 
-      {/* AI Chat Modal */}
-      {showAIChat && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
-            <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Sparkles className="w-5 h-5 text-purple-400" />
-                <h2 className="font-semibold">AI Invoice Assistant</h2>
-              </div>
-              <button onClick={() => setShowAIChat(false)} className="p-2 text-gray-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4">
-              <AIChatInvoice onInvoiceCreated={(inv) => {
-                setInvoices([inv, ...invoices])
-                setShowAIChat(false)
-                setActiveView('invoices')
-              }} />
-            </div>
-          </div>
-        </div>
-      )}
+      {showAIChat && (<div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"><div className="bg-gray-900 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden"><div className="p-4 border-b border-gray-800 flex items-center justify-between"><div className="flex items-center gap-3"><Sparkles className="w-5 h-5 text-purple-400" /><h2 className="font-semibold">AI Invoice Assistant</h2></div><button onClick={() => setShowAIChat(false)} className="p-2 text-gray-400 hover:text-white"><X className="w-5 h-5" /></button></div><div className="p-4"><AIChatInvoice businessName="CR AudioViz AI" onCreateInvoice={handleAIInvoiceCreated} /></div></div></div>)}
 
       <CrossMarketingFooter currentApp="invoice-generator" />
       <JavariWidget />
