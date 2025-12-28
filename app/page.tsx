@@ -53,6 +53,8 @@ export default function InvoiceGeneratorPage() {
   // Business settings
   const [businessName, setBusinessName] = useState('CR AudioViz AI LLC')
   const [businessEmail, setBusinessEmail] = useState('billing@craudioviz.ai')
+  const [currency, setCurrency] = useState('USD')
+  const [paymentLink, setPaymentLink] = useState('')
   const [paymentMethods, setPaymentMethods] = useState({
     venmo: '@CRAudioViz',
     paypal: 'pay@craudioviz.ai',
@@ -343,10 +345,11 @@ export default function InvoiceGeneratorPage() {
               {selectedInvoice && (
                 <>
                   <PaymentQRCode
-                    amount={selectedInvoice.total}
+                    paymentLink={paymentLink || `https://pay.craudiovizai.com/invoice/${selectedInvoice.invoice_number}`}
                     invoiceNumber={selectedInvoice.invoice_number}
-                    recipientName={businessName}
-                    paymentMethods={paymentMethods}
+                    amount={selectedInvoice.total}
+                    currency={currency}
+                    businessName={businessName}
                   />
                   
                   {selectedInvoice.status === 'overdue' && (
