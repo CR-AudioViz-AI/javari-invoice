@@ -13,6 +13,8 @@ interface BrandedHeaderProps {
   quickLinks?: Array<{ label: string; href: string }>;
 }
 
+type PlanType = 'free' | 'pro' | 'business';
+
 /**
  * Branded Header Component
  * 
@@ -27,7 +29,7 @@ export function BrandedHeader({ appName, appLogo, quickLinks = [] }: BrandedHead
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState<{ name?: string; email?: string } | null>(null);
   const [credits, setCredits] = useState(0);
-  const [plan, setPlan] = useState<'free' | 'pro' | 'business'>('free');
+  const [plan, setPlan] = useState<PlanType>('free');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -48,7 +50,8 @@ export function BrandedHeader({ appName, appLogo, quickLinks = [] }: BrandedHead
         const creditsResult = await CentralServices.Credits.getBalance();
         if (creditsResult.success) {
           setCredits(creditsResult.data?.balance || 0);
-          setPlan(creditsResult.data?.tier || 'free');
+          const tier = creditsResult.data?.tier;
+          setPlan((tier === 'pro' || tier === 'business' ? tier : 'free') as PlanType);
         }
       }
     } catch (error) {
