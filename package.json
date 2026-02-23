@@ -18,7 +18,7 @@
     "jspdf-autotable": "^3.8.2",
     "lucide-react": "^0.441.0",
     "date-fns": "^3.6.0",
-    "stripe": "^14.0.0",
+    "stripe": "^20.3.1",
     "resend": "^2.0.0"
   },
   "devDependencies": {
