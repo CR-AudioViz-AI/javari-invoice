@@ -19,7 +19,7 @@
     "lucide-react": "^0.441.0",
     "date-fns": "^3.6.0",
     "stripe": "^14.0.0",
-    "resend": "^2.0.0"
+    "resend": "^6.9.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",
