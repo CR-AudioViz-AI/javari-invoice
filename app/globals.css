@@ -4,79 +4,18 @@
 
 @layer base {
   :root {
-    /* Official CR AudioViz AI Brand Colors */
-    --cr-navy: #1E3A5F;
-    --cr-red: #E31937;
-    --cr-cyan: #00B4D8;
-    
-    /* Semantic Colors */
     --background: 0 0% 100%;
-    --foreground: 210 40% 20%;
-    
-    --card: 0 0% 100%;
-    --card-foreground: 210 40% 20%;
-    
-    --popover: 0 0% 100%;
-    --popover-foreground: 210 40% 20%;
-    
-    --primary: 207 69% 24%;        /* Navy 600 */
-    --primary-foreground: 0 0% 100%;
-    
-    --secondary: 195 100% 42%;     /* Cyan 500 */
-    --secondary-foreground: 0 0% 100%;
-    
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    
-    --accent: 351 82% 50%;         /* Red 600 */
-    --accent-foreground: 0 0% 100%;
-    
-    --destructive: 351 82% 50%;    /* Red 600 */
-    --destructive-foreground: 0 0% 100%;
-    
+    --foreground: 222.2 84% 4.9%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 207 69% 24%;           /* Navy 600 */
-    
+    --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
   }
-  
   .dark {
-    --background: 210 60% 6%;      /* Navy 900 */
+    --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    
-    --card: 210 50% 8%;            /* Navy 850 */
-    --card-foreground: 210 40% 98%;
-    
-    --popover: 210 50% 8%;
-    --popover-foreground: 210 40% 98%;
-    
-    --primary: 195 100% 42%;       /* Cyan 500 */
-    --primary-foreground: 210 40% 6%;
-    
-    --secondary: 207 69% 24%;      /* Navy 600 */
-    --secondary-foreground: 0 0% 100%;
-    
-    --muted: 210 50% 15%;
-    --muted-foreground: 215 20.2% 65.1%;
-    
-    --accent: 351 82% 50%;         /* Red 600 */
-    --accent-foreground: 0 0% 100%;
-    
-    --destructive: 351 82% 50%;
-    --destructive-foreground: 0 0% 100%;
-    
-    --border: 210 50% 15%;
-    --input: 210 50% 15%;
-    --ring: 195 100% 42%;
+    --border: 217.2 32.6% 17.5%;
   }
-}
-
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
+  * { border-color: hsl(var(--border)); }
+  .border-border { border-color: hsl(var(--border)); }
 }
